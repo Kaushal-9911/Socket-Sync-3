@@ -77,7 +77,6 @@ def users():
 # ---------- LOAD MESSAGES ----------
 @app.get("/messages")
 @app.get("/messages")
-@app.get("/messages")
 def messages():
     u1 = request.args.get("u1")
     u2 = request.args.get("u2")
@@ -97,16 +96,16 @@ def messages():
             ORDER BY timestamp
         """, (u1, u2, u2, u1))
 
-        rows = cur.fetchall()
+        data = cur.fetchall()
 
         cur.close()
         db.close()
 
-        return jsonify(rows)
+        return jsonify(data)
 
     except Exception as e:
         print("MESSAGES API ERROR ❌", e)
-        return jsonify([]), 200
+        return jsonify([])   # 👈 NEVER return HTML
 
 
 # ---------- SOCKET ----------
@@ -135,4 +134,3 @@ def send(data):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     socketio.run(app, host="0.0.0.0", port=port)
-
