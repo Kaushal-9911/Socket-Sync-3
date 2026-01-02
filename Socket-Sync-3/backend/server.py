@@ -16,11 +16,11 @@ CORS(app)
 
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
-# ---------- DATABASE (LOCAL + RENDER SAFE) ----------
-DB_HOST = os.environ.get("DB_HOST", "localhost")
-DB_USER = os.environ.get("DB_USER", "root")
-DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
-DB_NAME = os.environ.get("DB_NAME", "whatsapp_clone")
+# ================= DATABASE CONFIG =================
+DB_HOST = os.environ.get("DB_HOST")
+DB_USER = os.environ.get("DB_USER")
+DB_PASSWORD = os.environ.get("DB_PASSWORD")
+DB_NAME = os.environ.get("DB_NAME")
 DB_PORT = int(os.environ.get("DB_PORT", 3306))
 
 def get_db():
@@ -29,53 +29,54 @@ def get_db():
         user=DB_USER,
         password=DB_PASSWORD,
         database=DB_NAME,
-        port=DB_PORT
+        port=DB_PORT,
+        autocommit=True
     )
 
-db = mysql.connector.connect(
-    host=DB_HOST,
-    user=DB_USER,
-    password=DB_PASSWORD,
-    database=DB_NAME,
-    port=DB_PORT
-)
-
-# ---------- SIGNUP ----------
+# ================= SIGNUP =================
 @app.post("/signup")
 def signup():
     data = request.json
     try:
+        db = get_db()
         cur = db.cursor()
         cur.execute(
-            "INSERT INTO users (user_id, name, password, avatar) VALUES (%s,%s,%s,%s)",
+            "INSERT INTO users (user_id,name,password,avatar) VALUES (%s,%s,%s,%s)",
             (data["userId"], data["name"], data["password"], data["avatar"])
         )
-        db.commit()
+        cur.close()
+        db.close()
         return jsonify(success=True)
     except mysql.connector.IntegrityError:
         return jsonify(error="User ID already exists"), 400
 
-# ---------- LOGIN ----------
+# ================= LOGIN =================
 @app.post("/login")
 def login():
     data = request.json
+    db = get_db()
     cur = db.cursor(dictionary=True)
     cur.execute(
         "SELECT user_id,name,avatar FROM users WHERE user_id=%s AND password=%s",
         (data["userId"], data["password"])
     )
     user = cur.fetchone()
+    cur.close()
+    db.close()
     return jsonify(user) if user else (jsonify(error="Invalid credentials"), 401)
 
-# ---------- USERS ----------
+# ================= USERS =================
 @app.get("/users")
 def users():
+    db = get_db()
     cur = db.cursor(dictionary=True)
     cur.execute("SELECT user_id,name,avatar FROM users")
-    return jsonify(cur.fetchall())
+    rows = cur.fetchall()
+    cur.close()
+    db.close()
+    return jsonify(rows)
 
-# ---------- LOAD MESSAGES ----------
-@app.get("/messages")
+# ================= LOAD MESSAGES =================
 @app.get("/messages")
 def messages():
     u1 = request.args.get("u1")
@@ -84,7 +85,6 @@ def messages():
     try:
         db = get_db()
         cur = db.cursor(dictionary=True)
-
         cur.execute("""
             SELECT sender AS `from`,
                    receiver AS `to`,
@@ -95,42 +95,49 @@ def messages():
                OR (sender=%s AND receiver=%s)
             ORDER BY timestamp
         """, (u1, u2, u2, u1))
-
-        data = cur.fetchall()
-
+        rows = cur.fetchall()
         cur.close()
         db.close()
-
-        return jsonify(data)
-
+        return jsonify(rows)
     except Exception as e:
-        print("MESSAGES API ERROR ❌", e)
-        return jsonify([])   # 👈 NEVER return HTML
+        print("MESSAGES ERROR:", e)
+        return jsonify([])
 
-
-# ---------- SOCKET ----------
+# ================= SOCKET =================
 @socketio.on("join")
 def join(data):
     join_room(data["room"])
 
 @socketio.on("send_message")
 def send(data):
+    print("SOCKET DATA:", data)
     now = datetime.now()
-    cur = db.cursor()
-    cur.execute(
-        "INSERT INTO messages (sender,receiver,message,timestamp) VALUES (%s,%s,%s,%s)",
-        (data["from"], data["to"], data["text"], now)
-    )
-    db.commit()
 
-    emit("receive_message", {
-        "from": data["from"],
-        "to": data["to"],
-        "text": data["text"],
-        "time": now.strftime("%H:%M")
-    }, room="-".join(sorted([data["from"], data["to"]])))
+    try:
+        db = get_db()
+        cur = db.cursor()
+        cur.execute(
+            "INSERT INTO messages (sender,receiver,message,timestamp) VALUES (%s,%s,%s,%s)",
+            (data["from"], data["to"], data["text"], now)
+        )
+        cur.close()
+        db.close()
 
-# ---------- RUN (ONLY ONE) ----------
+        room = "-".join(sorted([data["from"], data["to"]]))
+
+        emit("receive_message", {
+            "from": data["from"],
+            "to": data["to"],
+            "text": data["text"],
+            "time": now.strftime("%H:%M")
+        }, room=room)
+
+        print("MESSAGE SAVED ✅")
+
+    except Exception as e:
+        print("SEND ERROR ❌", e)
+
+# ================= RUN =================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     socketio.run(app, host="0.0.0.0", port=port)
