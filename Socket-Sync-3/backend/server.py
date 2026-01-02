@@ -23,6 +23,15 @@ DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
 DB_NAME = os.environ.get("DB_NAME", "whatsapp_clone")
 DB_PORT = int(os.environ.get("DB_PORT", 3306))
 
+def get_db():
+    return mysql.connector.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME,
+        port=DB_PORT
+    )
+
 db = mysql.connector.connect(
     host=DB_HOST,
     user=DB_USER,
@@ -67,20 +76,37 @@ def users():
 
 # ---------- LOAD MESSAGES ----------
 @app.get("/messages")
+@app.get("/messages")
 def messages():
     u1 = request.args.get("u1")
     u2 = request.args.get("u2")
-    cur = db.cursor(dictionary=True)
-    cur.execute("""
-        SELECT sender AS `from`, receiver AS `to`,
-               message AS text,
-               DATE_FORMAT(timestamp,'%H:%i') AS time
-        FROM messages
-        WHERE (sender=%s AND receiver=%s)
-           OR (sender=%s AND receiver=%s)
-        ORDER BY timestamp
-    """, (u1, u2, u2, u1))
-    return jsonify(cur.fetchall())
+
+    try:
+        db = get_db()
+        cur = db.cursor(dictionary=True)
+
+        cur.execute("""
+            SELECT sender AS `from`,
+                   receiver AS `to`,
+                   message AS text,
+                   DATE_FORMAT(timestamp,'%H:%i') AS time
+            FROM messages
+            WHERE (sender=%s AND receiver=%s)
+               OR (sender=%s AND receiver=%s)
+            ORDER BY timestamp
+        """, (u1, u2, u2, u1))
+
+        data = cur.fetchall()
+
+        cur.close()
+        db.close()
+
+        return jsonify(data)
+
+    except Exception as e:
+        print("MESSAGES API ERROR ❌", e)
+        return jsonify([])   # 👈 NEVER return HTML
+
 
 # ---------- SOCKET ----------
 @socketio.on("join")
