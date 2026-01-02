@@ -1,8 +1,7 @@
 // ================= BACKEND BASE URL =================
 //const BASE_URL = "http://127.0.0.1:5000";
 // later change to Render URL:
- const BASE_URL = "https://render-try-bo3o.onrender.com";
-
+ const BASE_URL = "https://socket-sync-3.onrender.com";
 const socket = io(BASE_URL);
 
 
@@ -203,3 +202,4 @@ socket.on("receive_message", m=>{
         showMsg(m);
     }
 });
+
